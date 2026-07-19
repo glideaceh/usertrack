@@ -56,6 +56,7 @@
         .status-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
         .status-row:last-child { margin-bottom: 0; }
         .status-value { font-family: monospace; color: #34d399; }
+        .status-warning { color: #fbbf24; }
     </style>
 </head>
 <body>
@@ -85,6 +86,7 @@
 
         <div id="statusPanel" class="status-panel">
             <div class="status-row"><span>Status GPS:</span><span id="gpsStatus" class="status-value">Mencari Sinyal...</span></div>
+            <div class="status-row"><span>Status Layar:</span><span id="screenStatus" class="status-value">-</span></div>
             <div class="status-row"><span>Latitude:</span><span id="latValue" class="status-value">-</span></div>
             <div class="status-row"><span>Longitude:</span><span id="lngValue" class="status-value">-</span></div>
             <div class="status-row"><span>Update Terakhir:</span><span id="timeValue" class="status-value">-</span></div>
@@ -94,7 +96,6 @@
     <!-- Modul Firebase -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        // PERBAIKAN: Menghapus 'shadow' yang menyebabkan error modul
         import { getDatabase, ref, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
         const firebaseConfig = {
@@ -112,12 +113,61 @@
 
         let watchId = null;
         let isTracking = false;
+        let wakeLock = null; // Variabel penyimpan status Wake Lock
 
         const btnToggle = document.getElementById('btnToggle');
         const statusPanel = document.getElementById('statusPanel');
         const courierIdInput = document.getElementById('courierId');
         const courierNameInput = document.getElementById('courierName');
         const courierStatusSelect = document.getElementById('courierStatus');
+        const screenStatusEl = document.getElementById('screenStatus');
+
+        // ==========================================
+        // FUNGSI SCREEN WAKE LOCK
+        // ==========================================
+        
+        // Meminta agar layar terus menyala
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    screenStatusEl.innerText = "Terkunci (Selalu On)";
+                    screenStatusEl.className = "status-value";
+                    
+                    // Deteksi jika pengguna pindah tab dan kembali lagi
+                    document.addEventListener('visibilitychange', handleVisibilityChange);
+                } else {
+                    screenStatusEl.innerText = "Tidak Didukung Browser";
+                    screenStatusEl.className = "status-value status-warning";
+                }
+            } catch (err) {
+                console.error(`Wake Lock Error: ${err.name}, ${err.message}`);
+                screenStatusEl.innerText = "Gagal Mengunci Layar";
+                screenStatusEl.className = "status-value status-warning";
+            }
+        }
+
+        // Melepas kunci layar
+        function releaseWakeLock() {
+            if (wakeLock !== null) {
+                wakeLock.release().then(() => {
+                    wakeLock = null;
+                    screenStatusEl.innerText = "Normal (Bisa Mati)";
+                    document.removeEventListener('visibilitychange', handleVisibilityChange);
+                });
+            }
+        }
+
+        // Menjaga Wake Lock tetap hidup saat kurir membuka kembali browser yang sempat di-minimize
+        async function handleVisibilityChange() {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        }
+
+        // ==========================================
+        // FUNGSI TRACKING & FIREBASE
+        // ==========================================
 
         function toggleFormInputs(disabled) {
             courierIdInput.disabled = disabled;
@@ -130,7 +180,7 @@
             const name = courierNameInput.value.trim();
             const status = courierStatusSelect.value;
 
-            if (!id) return alert("ID Kurir tidak boleh kosong!");
+            if (!id) return;
 
             const courierRef = ref(db, `couriers/${id}`);
             
@@ -159,10 +209,14 @@
 
         function errorGPS(err) {
             console.warn(`ERROR GPS (${err.code}): ${err.message}`);
-            document.getElementById('gpsStatus').innerText = "Sinyal Lemah / Izin Ditolak";
+            document.getElementById('gpsStatus').innerText = "Sinyal Lemah / Ditolak";
         }
 
-        btnToggle.addEventListener('click', () => {
+        // ==========================================
+        // TOMBOL UTAMA (MULAI/BERHENTI)
+        // ==========================================
+
+        btnToggle.addEventListener('click', async () => {
             if (!("geolocation" in navigator)) {
                 return alert("Browser Anda tidak mendukung GPS / Geolocation.");
             }
@@ -171,12 +225,14 @@
                 const id = courierIdInput.value.trim();
                 if(!id) return alert("Silakan masukkan ID Kurir terlebih dahulu.");
 
-                // Meminta izin lokasi dari browser
                 isTracking = true;
                 btnToggle.innerText = "Selesai Kerja (Matikan GPS)";
                 btnToggle.className = "btn-track btn-on";
                 statusPanel.style.display = "block";
                 toggleFormInputs(true);
+
+                // Aktifkan Wake Lock agar layar tidak mati
+                await requestWakeLock();
 
                 const geoOptions = {
                     enableHighAccuracy: true,
@@ -192,6 +248,9 @@
                 btnToggle.className = "btn-track btn-off";
                 statusPanel.style.display = "none";
                 toggleFormInputs(false);
+
+                // Matikan Wake Lock agar layar bisa mati normal
+                releaseWakeLock();
 
                 if (watchId !== null) {
                     navigator.geolocation.clearWatch(watchId);
