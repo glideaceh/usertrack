@@ -2,272 +2,660 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kurir App - Live Location</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Driver MBG - Live Location & Distribusi</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome 6 Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: '-apple-system', BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        body { 
-            height: 100vh; display: flex; align-items: center; justify-content: center; 
-            background: #111827; color: #f3f4f6; padding: 20px;
+        body {
+            background-color: #0f172a;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-tap-highlight-color: transparent;
         }
 
-        .app-card {
-            width: 100%; max-width: 400px;
-            background: rgba(31, 41, 55, 0.65);
-            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 28px; padding: 32px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-            text-align: center;
+        #app-container {
+            max-width: 480px;
+            margin: 0 auto;
+            height: 100vh;
+            height: 100dvh;
+            background-color: #f8fafc;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
-        h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 24px; color: #fff; }
-
-        .input-group { text-align: left; margin-bottom: 20px; }
-        .input-group label { display: block; font-size: 0.85rem; color: #9ca3af; margin-bottom: 8px; font-weight: 500; }
-        .input-group input, .input-group select {
-            width: 100%; padding: 14px 16px; background: rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px;
-            color: #fff; font-size: 1rem; outline: none; transition: all 0.3s;
+        .view-section {
+            display: none;
+            height: 100%;
+            width: 100%;
+            flex-direction: column;
         }
-        .input-group input:focus, .input-group select:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
 
-        .btn-track {
-            width: 100%; padding: 16px; border: none; border-radius: 16px;
-            font-size: 1.1rem; font-weight: 600; cursor: pointer; margin-top: 10px;
+        .view-section.active {
+            display: flex;
+        }
+
+        #map {
+            flex-grow: 1;
+            width: 100%;
+            z-index: 10;
+        }
+
+        /* 
+         * Animasi Pergerakan Marker ala Gojek (Smooth Gliding & Rotation) 
+         */
+        .custom-car-marker {
+            /* Membuat transisi X/Y mulus saat koordinat berubah */
+            transition: transform 1.5s linear !important; 
+        }
+        .custom-car-marker img {
+            /* Membuat rotasi (heading) berputar mulus */
+            transition: transform 0.8s ease-out; 
+            will-change: transform;
+            /* Efek shadow pada mobil */
+            filter: drop-shadow(0px 8px 6px rgba(0,0,0,0.4)); 
+        }
+
+        /* Custom Toggle Switch */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #10b981;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #10b981;
+        }
+
+        /* Toast Popup */
+        #custom-toast {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            transform: translateY(100px);
+            opacity: 0;
         }
-        .btn-off { background: #3b82f6; color: #fff; }
-        .btn-off:hover { background: #2563eb; }
-        .btn-on { background: #ef4444; color: #fff; animation: pulse-red 2s infinite; }
-
-        @keyframes pulse-red {
-            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
-            70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        #custom-toast.show {
+            transform: translateY(0);
+            opacity: 1;
         }
-
-        .status-panel {
-            margin-top: 24px; padding: 16px; background: rgba(0,0,0,0.15);
-            border-radius: 14px; font-size: 0.85rem; display: none; text-align: left;
-            border: 1px solid rgba(255,255,255,0.05);
-        }
-        .status-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
-        .status-row:last-child { margin-bottom: 0; }
-        .status-value { font-family: monospace; color: #34d399; }
-        .status-warning { color: #fbbf24; }
     </style>
 </head>
 <body>
 
-    <div class="app-card">
-        <h1>Dashboard Kurir</h1>
-        
-        <div class="input-group">
-            <label for="courierId">ID Kurir (Username)</label>
-            <input type="text" id="courierId" placeholder="contoh: kurir_01" value="kurir_01">
-        </div>
+<div id="app-container">
 
-        <div class="input-group">
-            <label for="courierName">Nama Lengkap</label>
-            <input type="text" id="courierName" placeholder="Masukkan nama Anda" value="Budi Santoso">
-        </div>
+    <!-- ================= HALAMAN LOGIN ================= -->
+    <div id="login-view" class="view-section active bg-white text-slate-800">
+        <div class="flex-grow flex flex-col justify-center px-8">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center bg-emerald-100 text-emerald-600 w-20 h-20 rounded-3xl shadow-lg shadow-emerald-500/20 mb-4 transform hover:scale-105 transition border-2 border-emerald-500">
+                    <i class="fa-solid fa-truck-fast text-4xl"></i>
+                </div>
+                <!-- Judul Warna Hijau -->
+                <h1 class="text-2xl font-extrabold text-emerald-600">Driver MBG</h1>
+                <p class="text-slate-500 text-sm mt-1 font-medium">Aplikasi Distribusi Makan Bergizi Gratis</p>
+            </div>
 
-        <div class="input-group">
-            <label for="courierStatus">Status Kerja</label>
-            <select id="courierStatus">
-                <option value="standby">Standby (Tersedia)</option>
-                <option value="on_delivery">On Delivery (Mengantar)</option>
-            </select>
-        </div>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">ID Relawan / NIK</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-id-badge absolute left-4 top-3.5 text-emerald-500"></i>
+                        <input type="text" id="loginCourierId" class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition" placeholder="Masukkan ID Relawan" required>
+                    </div>
+                </div>
 
-        <button id="btnToggle" class="btn-track btn-off">Mulai Kerja (Aktifkan GPS)</button>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Kata Sandi</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-lock absolute left-4 top-3.5 text-emerald-500"></i>
+                        <input type="password" id="loginCourierPassword" class="w-full pl-11 pr-11 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition" placeholder="••••••••" required>
+                        <button type="button" onclick="togglePassVisibility('loginCourierPassword', 'eyeIconLogin')" class="absolute right-4 top-3.5 text-slate-400 hover:text-emerald-600 transition">
+                            <i id="eyeIconLogin" class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
 
-        <div id="statusPanel" class="status-panel">
-            <div class="status-row"><span>Status GPS:</span><span id="gpsStatus" class="status-value">Mencari Sinyal...</span></div>
-            <div class="status-row"><span>Status Layar:</span><span id="screenStatus" class="status-value">-</span></div>
-            <div class="status-row"><span>Latitude:</span><span id="latValue" class="status-value">-</span></div>
-            <div class="status-row"><span>Longitude:</span><span id="lngValue" class="status-value">-</span></div>
-            <div class="status-row"><span>Update Terakhir:</span><span id="timeValue" class="status-value">-</span></div>
+                <button type="submit" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-500/30 transition active:scale-[0.98] mt-2">
+                    Masuk
+                </button>
+            </form>
+
+            <div class="mt-8 text-center">
+                <p class="text-slate-500 text-sm font-medium">Belum punya akun? 
+                    <button type="button" onclick="switchView('register-view')" class="text-emerald-600 font-bold hover:underline">Daftar Sekarang</button>
+                </p>
+            </div>
         </div>
     </div>
 
-    <!-- Modul Firebase -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getDatabase, ref, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+    <!-- ================= HALAMAN REGISTER ================= -->
+    <div id="register-view" class="view-section bg-white text-slate-800">
+        <div class="flex-grow flex flex-col justify-center px-8 py-6">
+            <button type="button" onclick="switchView('login-view')" class="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center mb-4 hover:bg-slate-200 transition">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <!-- Judul Warna Hijau -->
+            <h1 class="text-2xl font-extrabold text-emerald-600">Pendaftaran Relawan</h1>
+            <p class="text-slate-500 text-sm mt-1 mb-6 font-medium">Lengkapi data diri untuk bergabung sebagai relawan</p>
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyBgwpEPTeg_9_rd7iRgo7qXIfbmOgMhHyo",
-            authDomain: "tracking-kurir.firebaseapp.com",
-            databaseURL: "https://tracking-kurir-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "tracking-kurir",
-            storageBucket: "tracking-kurir.firebasestorage.app",
-            messagingSenderId: "665988290840",
-            appId: "1:665988290840:web:ba878fd0daf99c1042e66d"
-        };
+            <form id="register-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">ID Relawan / NIK</label>
+                    <input type="text" id="regCourierId" placeholder="Masukkan ID Relawan" class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-500 transition" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nama Sesuai KTP</label>
+                    <input type="text" id="regCourierName" placeholder="Nama Lengkap" class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-500 transition" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nomor Handphone</label>
+                    <input type="tel" id="regCourierPhone" placeholder="08xxxxxxxxxx" class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-500 transition" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Buat Kata Sandi</label>
+                    <div class="relative">
+                        <input type="password" id="regCourierPassword" placeholder="••••••••" class="w-full pl-4 pr-11 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-500 transition" required>
+                        <button type="button" onclick="togglePassVisibility('regCourierPassword', 'eyeIconReg')" class="absolute right-4 top-3.5 text-slate-400 hover:text-emerald-600 transition">
+                            <i id="eyeIconReg" class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+                <button type="submit" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-500/30 transition mt-2">
+                    Daftar Sekarang
+                </button>
+            </form>
+        </div>
+    </div>
 
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-
-        let watchId = null;
-        let isTracking = false;
-        let wakeLock = null; // Variabel penyimpan status Wake Lock
-
-        const btnToggle = document.getElementById('btnToggle');
-        const statusPanel = document.getElementById('statusPanel');
-        const courierIdInput = document.getElementById('courierId');
-        const courierNameInput = document.getElementById('courierName');
-        const courierStatusSelect = document.getElementById('courierStatus');
-        const screenStatusEl = document.getElementById('screenStatus');
-
-        // ==========================================
-        // FUNGSI SCREEN WAKE LOCK
-        // ==========================================
+    <!-- ================= HALAMAN DASHBOARD ================= -->
+    <div id="dashboard-view" class="view-section relative bg-slate-100 overflow-hidden">
         
-        // Meminta agar layar terus menyala
-        async function requestWakeLock() {
-            try {
-                if ('wakeLock' in navigator) {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                    screenStatusEl.innerText = "Terkunci (Selalu On)";
-                    screenStatusEl.className = "status-value";
-                    
-                    // Deteksi jika pengguna pindah tab dan kembali lagi
-                    document.addEventListener('visibilitychange', handleVisibilityChange);
-                } else {
-                    screenStatusEl.innerText = "Tidak Didukung Browser";
-                    screenStatusEl.className = "status-value status-warning";
-                }
-            } catch (err) {
-                console.error(`Wake Lock Error: ${err.name}, ${err.message}`);
-                screenStatusEl.innerText = "Gagal Mengunci Layar";
-                screenStatusEl.className = "status-value status-warning";
-            }
-        }
-
-        // Melepas kunci layar
-        function releaseWakeLock() {
-            if (wakeLock !== null) {
-                wakeLock.release().then(() => {
-                    wakeLock = null;
-                    screenStatusEl.innerText = "Normal (Bisa Mati)";
-                    document.removeEventListener('visibilitychange', handleVisibilityChange);
-                });
-            }
-        }
-
-        // Menjaga Wake Lock tetap hidup saat kurir membuka kembali browser yang sempat di-minimize
-        async function handleVisibilityChange() {
-            if (wakeLock !== null && document.visibilityState === 'visible') {
-                await requestWakeLock();
-            }
-        }
-
-        // ==========================================
-        // FUNGSI TRACKING & FIREBASE
-        // ==========================================
-
-        function toggleFormInputs(disabled) {
-            courierIdInput.disabled = disabled;
-            courierNameInput.disabled = disabled;
-            courierStatusSelect.disabled = disabled;
-        }
-
-        function updateLocationToFirebase(lat, lng) {
-            const id = courierIdInput.value.trim();
-            const name = courierNameInput.value.trim();
-            const status = courierStatusSelect.value;
-
-            if (!id) return;
-
-            const courierRef = ref(db, `couriers/${id}`);
+        <!-- Header Bar Dashboard -->
+        <header class="z-30 bg-white/90 backdrop-blur-md shadow-lg pt-4 pb-3 px-4 rounded-b-2xl absolute top-0 w-full left-0 border-b border-slate-100">
+            <div class="flex justify-between items-center mb-3">
+                <div class="flex items-center space-x-3">
+                    <div class="relative">
+                        <img id="driverAvatar" src="https://ui-avatars.com/api/?name=Relawan&background=10b981&color=fff" alt="Profile" class="w-11 h-11 rounded-full border-2 border-emerald-500 shadow-md">
+                        <span id="badgeOnlineStatus" class="absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-400 border-2 border-white rounded-full"></span>
+                    </div>
+                    <div>
+                        <h2 id="displayDriverName" class="font-bold text-slate-800 text-sm leading-tight">Memuat...</h2>
+                        <div id="statusText" class="flex items-center text-xs font-semibold text-slate-500 mt-0.5">
+                            <i class="fa-solid fa-circle text-[8px] mr-1 text-slate-400"></i> Istirahat (Offline)
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Toggle Online/Offline -->
+                <div class="flex items-center bg-slate-100 p-1.5 rounded-full border border-slate-200">
+                    <span class="text-xs font-bold mr-2 ml-2 text-slate-600" id="switchLabel">OFF</span>
+                    <div class="relative inline-block w-12 h-6 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" id="status-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-slate-300 appearance-none cursor-pointer z-10 transition-all duration-300"/>
+                        <label for="status-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-300 cursor-pointer transition-colors duration-300"></label>
+                    </div>
+                </div>
+            </div>
             
-            update(courierRef, {
-                name: name,
-                status: status,
-                location: { lat: lat, lng: lng },
+            <!-- Operational Stats MBG -->
+            <div class="grid grid-cols-3 gap-2 bg-emerald-50/80 rounded-xl p-2.5 border border-emerald-100 text-center">
+                <div>
+                    <p class="text-[10px] uppercase font-bold text-emerald-800/70">Target Antar</p>
+                    <p class="font-extrabold text-slate-800 text-xs mt-0.5">45 Pax</p>
+                </div>
+                <div class="border-x border-emerald-200/60 px-1">
+                    <p class="text-[10px] uppercase font-bold text-emerald-800/70">Selesai</p>
+                    <p class="font-extrabold text-emerald-600 text-xs mt-0.5">0 Pax</p>
+                </div>
+                <div>
+                    <p class="text-[10px] uppercase font-bold text-emerald-800/70">Sisa</p>
+                    <p class="font-extrabold text-rose-500 text-xs mt-0.5">45 Pax</p>
+                </div>
+            </div>
+
+            <!-- Status Live GPS -->
+            <div class="mt-2.5 flex items-center justify-between text-[11px] bg-slate-800 text-slate-200 px-3 py-1.5 rounded-lg shadow-inner">
+                <div class="flex items-center space-x-1.5">
+                    <i class="fa-solid fa-satellite-dish text-emerald-400 animate-pulse"></i>
+                    <span>GPS: <strong id="gpsStatusText" class="text-slate-400">Belum Aktif</strong></span>
+                </div>
+                <div class="text-[10px] text-slate-400">
+                    <span id="latLngDisplay">Lat: - | Lng: -</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Peta Leaflet -->
+        <div id="map"></div>
+
+        <!-- Tombol Recenter -->
+        <button id="recenter-btn" title="Pusatkan ke lokasi saya" class="z-20 absolute bottom-20 right-4 bg-white text-emerald-600 w-12 h-12 p-3 rounded-2xl shadow-xl flex items-center justify-center hover:bg-emerald-50 active:scale-95 transition border border-slate-100 focus:outline-none">
+            <i class="fa-solid fa-crosshairs text-xl"></i>
+        </button>
+
+        <!-- Bottom Navigation Bar -->
+        <nav class="z-30 absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center pt-2 pb-3 px-2 shadow-[0_-8px_20px_rgba(0,0,0,0.06)]">
+            <button class="flex flex-col items-center p-1 text-emerald-600 w-1/4">
+                <i class="fa-solid fa-house text-lg mb-0.5"></i>
+                <span class="text-[10px] font-bold">Beranda</span>
+            </button>
+            <button class="flex flex-col items-center p-1 text-slate-400 hover:text-emerald-600 transition w-1/4">
+                <i class="fa-solid fa-clipboard-list text-lg mb-0.5"></i>
+                <span class="text-[10px] font-bold">Tugas</span>
+            </button>
+            <button class="flex flex-col items-center p-1 text-slate-400 hover:text-emerald-600 transition w-1/4">
+                <i class="fa-solid fa-comments text-lg mb-0.5"></i>
+                <span class="text-[10px] font-bold">Pesan</span>
+            </button>
+            <button onclick="logout()" class="flex flex-col items-center p-1 text-slate-400 hover:text-rose-500 transition w-1/4">
+                <i class="fa-solid fa-right-from-bracket text-lg mb-0.5"></i>
+                <span class="text-[10px] font-bold">Keluar</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Notification Toast Popup -->
+    <div id="custom-toast" class="z-50 absolute bottom-20 left-4 right-4 bg-slate-900/95 text-white p-3.5 rounded-2xl shadow-2xl flex items-center space-x-3 border border-slate-700">
+        <i id="toastIcon" class="fa-solid fa-circle-info text-emerald-400 text-xl"></i>
+        <div class="text-xs flex-grow" id="toastMessage">Pesan Notifikasi...</div>
+    </div>
+
+</div>
+
+<!-- Leaflet Library JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Firebase SDK Module Integration -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getDatabase, ref as rtdbRef, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+    import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+    // Konfigurasi Firebase Anda
+    const firebaseConfig = {
+        apiKey: "AIzaSyBgwpEPTeg_9_rd7iRgo7qXIfbmOgMhHyo",
+        authDomain: "tracking-kurir.firebaseapp.com",
+        databaseURL: "https://tracking-kurir-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "tracking-kurir",
+        storageBucket: "tracking-kurir.firebasestorage.app",
+        messagingSenderId: "665988290840",
+        appId: "1:665988290840:web:ba878fd0daf99c1042e66d"
+    };
+
+    // Inisialisasi Firebase Apps
+    const app = initializeApp(firebaseConfig);
+    const rtdb = getDatabase(app);
+    const dbFS = getFirestore(app);
+
+    // Global State Variables
+    let currentUser = null;
+    let map = null;
+    let driverMarker = null;
+    let watchId = null;
+    let isOnline = false;
+    let mapInitialized = false;
+    let currentHeading = 0; // Sudut arah hadap mobil
+
+    // Posisi awal peta (Default Indonesia)
+    let driverLat = -2.5489;
+    let driverLng = 118.0149;
+
+    // Helper timeout untuk permintaan jaringan
+    const withTimeout = (promise, ms = 5000) => {
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('Koneksi habis waktu (Timeout)')), ms);
+        });
+        return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+    };
+
+    // Helper Toast Notification
+    window.showToast = function(message, iconClass = "fa-circle-info text-emerald-400") {
+        const toast = document.getElementById('custom-toast');
+        const toastMessage = document.getElementById('toastMessage');
+        const toastIcon = document.getElementById('toastIcon');
+
+        toastMessage.innerText = message;
+        toastIcon.className = `fa-solid ${iconClass} text-xl`;
+        
+        toast.classList.add('show');
+        setTimeout(() => {
+            toast.classList.remove('show');
+        }, 3500);
+    };
+
+    // Helper Password Visiblity Toggle
+    window.togglePassVisibility = function(inputId, iconId) {
+        const input = document.getElementById(inputId);
+        const icon = document.getElementById(iconId);
+        if (input.type === "password") {
+            input.type = "text";
+            icon.className = "fa-solid fa-eye-slash";
+        } else {
+            input.type = "password";
+            icon.className = "fa-solid fa-eye";
+        }
+    };
+
+    // Switch View Navigation
+    window.switchView = function(viewId) {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+
+        if (viewId === 'dashboard-view' && !mapInitialized) {
+            setTimeout(() => initMap(), 300);
+        }
+    };
+
+    // ==========================================
+    // CEK AUTO LOGIN (LOCAL STORAGE)
+    // ==========================================
+    document.addEventListener("DOMContentLoaded", () => {
+        const savedSession = localStorage.getItem("mbg_driver_session");
+        if (savedSession) {
+            currentUser = JSON.parse(savedSession);
+            document.getElementById('displayDriverName').innerText = currentUser.nama;
+            document.getElementById('driverAvatar').src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.nama)}&background=10b981&color=fff`;
+            switchView('dashboard-view');
+            showToast(`Selamat datang kembali, ${currentUser.nama}!`, "fa-circle-check text-emerald-400");
+        }
+    });
+
+    // ==========================================
+    // SISTEM AUTENTIKASI (FIRESTORE)
+    // ==========================================
+
+    // Submit Pendaftaran
+    document.getElementById('register-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const id = document.getElementById('regCourierId').value.trim();
+        const name = document.getElementById('regCourierName').value.trim();
+        const phone = document.getElementById('regCourierPhone').value.trim();
+        const pass = document.getElementById('regCourierPassword').value;
+
+        showToast("Memproses pendaftaran...", "fa-spinner fa-spin text-blue-400");
+
+        try {
+            const userRef = doc(dbFS, "mbg_relawan", id);
+            const docSnap = await withTimeout(getDoc(userRef));
+
+            if (docSnap.exists()) {
+                return showToast("ID Relawan sudah terdaftar! Gunakan ID lain.", "fa-circle-xmark text-rose-400");
+            }
+
+            await withTimeout(setDoc(userRef, {
+                id: id,
+                nama: name,
+                no_hp: phone,
+                password: pass,
+                role: "relawan",
+                bergabung: new Date().toISOString()
+            }));
+
+            // Simpan sesi auto-login (LocalStorage)
+            currentUser = { id: id, nama: name, no_hp: phone };
+            localStorage.setItem("mbg_driver_session", JSON.stringify(currentUser));
+
+            document.getElementById('displayDriverName').innerText = currentUser.nama;
+            document.getElementById('driverAvatar').src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.nama)}&background=10b981&color=fff`;
+
+            showToast("Pendaftaran berhasil!", "fa-circle-check text-emerald-400");
+            switchView('dashboard-view');
+
+        } catch (error) {
+            console.error("Register Error:", error);
+            showToast("Gagal mendaftar: " + error.message, "fa-triangle-exclamation text-rose-400");
+        }
+    });
+
+    // Submit Login
+    document.getElementById('login-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const id = document.getElementById('loginCourierId').value.trim();
+        const pass = document.getElementById('loginCourierPassword').value;
+
+        showToast("Memeriksa akun...", "fa-spinner fa-spin text-blue-400");
+
+        try {
+            const userRef = doc(dbFS, "mbg_relawan", id);
+            const docSnap = await withTimeout(getDoc(userRef));
+
+            if (!docSnap.exists()) {
+                return showToast("ID Relawan tidak ditemukan!", "fa-circle-xmark text-rose-400");
+            }
+
+            const userData = docSnap.data();
+
+            if (userData.password !== pass) {
+                return showToast("Kata sandi salah!", "fa-circle-xmark text-rose-400");
+            }
+
+            // Simpan sesi auto-login (LocalStorage)
+            currentUser = { id: id, nama: userData.nama, no_hp: userData.no_hp || "" };
+            localStorage.setItem("mbg_driver_session", JSON.stringify(currentUser));
+
+            document.getElementById('displayDriverName').innerText = currentUser.nama;
+            document.getElementById('driverAvatar').src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.nama)}&background=10b981&color=fff`;
+
+            switchView('dashboard-view');
+            showToast(`Selamat bertugas, ${currentUser.nama}!`, "fa-circle-check text-emerald-400");
+
+        } catch (error) {
+            console.error("Login Error:", error);
+            showToast("Gagal masuk: " + error.message, "fa-triangle-exclamation text-rose-400");
+        }
+    });
+
+    // Logout
+    window.logout = function() {
+        if (isOnline) {
+            document.getElementById('status-toggle').click(); // Matikan tracking
+        }
+        currentUser = null;
+        localStorage.removeItem("mbg_driver_session"); // Hapus sesi
+        
+        // Reset form login
+        document.getElementById('loginCourierId').value = "";
+        document.getElementById('loginCourierPassword').value = "";
+        
+        switchView('login-view');
+        showToast("Anda telah keluar.");
+    };
+
+    // ==========================================
+    // MAP & LIVE GPS LOCATION TRACKING (RTDB)
+    // ==========================================
+
+    // Mengkalkulasi derajat arah(bearing) antar 2 titik kordinat agar mobil menghadap ke arah jalan
+    function calculateBearing(startLat, startLng, destLat, destLng) {
+        const toRad = (degree) => degree * Math.PI / 180;
+        const toDeg = (rad) => rad * 180 / Math.PI;
+
+        const phi1 = toRad(startLat);
+        const phi2 = toRad(destLat);
+        const deltaLambda = toRad(destLng - startLng);
+
+        const y = Math.sin(deltaLambda) * Math.cos(phi2);
+        const x = Math.cos(phi1) * Math.sin(phi2) -
+                  Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+
+        let brng = toDeg(Math.atan2(y, x));
+        return (brng + 360) % 360;
+    }
+
+    function initMap() {
+        if (mapInitialized) return;
+
+        map = L.map('map', { zoomControl: false }).setView([driverLat, driverLng], 5);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap & CartoDB',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Ikon Mobil Custom CDN
+        const carImageUrl = "https://cdn-user-icons.flaticon.com/102638/102638781/1784658670756.svg?token=exp=1784659598~hmac=9f5e03477d957d1fd228cdcee13f0003";
+
+        const customDriverIcon = L.divIcon({
+            className: 'custom-car-marker',
+            html: `<img src="${carImageUrl}" id="car-icon-img" style="width: 44px; height: 44px; transform: rotate(0deg);">`,
+            iconSize: [44, 44],
+            iconAnchor: [22, 22] // Ditengah agar rotasi rapih
+        });
+
+        driverMarker = L.marker([driverLat, driverLng], { icon: customDriverIcon }).addTo(map);
+        driverMarker.setOpacity(0); 
+        mapInitialized = true;
+    }
+
+    function updateMapMarker(lat, lng, headingFromGPS) {
+        // Kalkulasi sudut putar (Bearing) hanya jika berpindah jarak lumayan agar stabil
+        if (driverLat !== -2.5489 && (Math.abs(driverLat - lat) > 0.00001 || Math.abs(driverLng - lng) > 0.00001)) {
+            // Gunakan heading asli dari GPS jika ada, jika tidak kalkulasi manual
+            if (headingFromGPS && !isNaN(headingFromGPS)) {
+                currentHeading = headingFromGPS;
+            } else {
+                currentHeading = calculateBearing(driverLat, driverLng, lat, lng);
+            }
+        }
+
+        driverLat = lat;
+        driverLng = lng;
+
+        if (driverMarker) {
+            driverMarker.setOpacity(1);
+            driverMarker.setLatLng([lat, lng]); // Ini akan meluncur mulus karena CSS transition transform
+            
+            // Putar gambar mobil
+            const carImg = document.getElementById('car-icon-img');
+            if (carImg) {
+                carImg.style.transform = `rotate(${currentHeading}deg)`;
+            }
+        }
+        
+        document.getElementById('latLngDisplay').innerText = `Lat: ${lat.toFixed(4)} | Lng: ${lng.toFixed(4)}`;
+    }
+
+    // Toggle Switch Pekerjaan
+    const statusToggle = document.getElementById('status-toggle');
+    const statusText = document.getElementById('statusText');
+    const switchLabel = document.getElementById('switchLabel');
+    const badgeStatus = document.getElementById('badgeOnlineStatus');
+    const gpsStatusText = document.getElementById('gpsStatusText');
+
+    statusToggle.addEventListener('change', function() {
+        if (this.checked) {
+            isOnline = true;
+            statusText.innerHTML = '<i class="fa-solid fa-circle text-[8px] mr-1 text-emerald-500 animate-pulse"></i> Mengantar (Online)';
+            statusText.className = "flex items-center text-xs font-bold text-emerald-600 mt-0.5";
+            switchLabel.innerText = "ON";
+            switchLabel.className = "text-xs font-bold mr-2 ml-2 text-emerald-600";
+            badgeStatus.className = "absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full animate-pulse";
+            gpsStatusText.innerText = "Mencari Sinyal...";
+            gpsStatusText.className = "text-amber-400 font-bold";
+
+            startGpsTracking();
+            showToast("Status MENGANTAR. GPS Aktif!");
+        } else {
+            isOnline = false;
+            statusText.innerHTML = '<i class="fa-solid fa-circle text-[8px] mr-1 text-slate-400"></i> Istirahat (Offline)';
+            statusText.className = "flex items-center text-xs font-semibold text-slate-500 mt-0.5";
+            switchLabel.innerText = "OFF";
+            switchLabel.className = "text-xs font-bold mr-2 ml-2 text-slate-600";
+            badgeStatus.className = "absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-400 border-2 border-white rounded-full";
+            gpsStatusText.innerText = "Belum Aktif";
+            gpsStatusText.className = "text-slate-400 font-bold";
+
+            stopGpsTracking();
+            showToast("Status ISTIRAHAT.", "fa-circle-pause text-amber-400");
+        }
+    });
+
+    // Mulai Pelacakan GPS Real-time ke Firebase RTDB
+    function startGpsTracking() {
+        if (!navigator.geolocation) {
+            showToast("Perangkat tidak mendukung Geolocation", "fa-triangle-exclamation text-rose-400");
+            statusToggle.checked = false;
+            return;
+        }
+
+        watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                const heading = pos.coords.heading; // Bisa null jika device tidak support compass
+
+                updateMapMarker(lat, lng, heading);
+
+                if (gpsStatusText.innerText === "Mencari Sinyal...") {
+                    map.setView([lat, lng], 17);
+                }
+
+                gpsStatusText.innerText = `Akurat (${pos.coords.accuracy.toFixed(0)}m)`;
+                gpsStatusText.className = "text-emerald-400 font-bold";
+
+                // Kirim Posisi ke Realtime Database
+                if (currentUser) {
+                    const trackRef = rtdbRef(rtdb, `tracking_mbg/${currentUser.id}`);
+                    update(trackRef, {
+                        nama: currentUser.nama,
+                        location: { lat: lat, lng: lng },
+                        heading: currentHeading,
+                        status: "mengantar",
+                        last_updated: new Date().toISOString()
+                    });
+                }
+            },
+            (err) => {
+                gpsStatusText.innerText = `Sinyal Lemah (${err.message})`;
+                gpsStatusText.className = "text-amber-400 font-bold";
+            },
+            { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+        );
+    }
+
+    // Hentikan Pelacakan GPS
+    function stopGpsTracking() {
+        if (watchId !== null) {
+            navigator.geolocation.clearWatch(watchId);
+            watchId = null;
+        }
+
+        if (driverMarker) {
+            driverMarker.setOpacity(0);
+        }
+
+        // Update Status Offline ke RTDB
+        if (currentUser) {
+            const trackRef = rtdbRef(rtdb, `tracking_mbg/${currentUser.id}`);
+            update(trackRef, { 
+                status: "offline",
                 last_updated: new Date().toISOString()
-            }).catch((error) => {
-                console.error("Gagal mengirim data ke Firebase:", error);
-                document.getElementById('gpsStatus').innerText = "Error Firebase";
             });
         }
+    }
 
-        function successGPS(position) {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            
-            document.getElementById('gpsStatus').innerText = "Terhubung (Aktif)";
-            document.getElementById('latValue').innerText = lat.toFixed(6);
-            document.getElementById('lngValue').innerText = lng.toFixed(6);
-            document.getElementById('timeValue').innerText = new Date().toLocaleTimeString();
-
-            updateLocationToFirebase(lat, lng);
+    // Tombol Pusatkan Peta
+    document.getElementById('recenter-btn').addEventListener('click', function() {
+        if (driverMarker && driverMarker.options.opacity !== 0) {
+            map.flyTo([driverLat, driverLng], 17, { animate: true, duration: 1.0 });
+            showToast("Peta dipusatkan ke posisi Anda!");
+        } else {
+            showToast("Aktifkan status (ON) untuk melihat lokasi GPS.", "fa-triangle-exclamation text-amber-400");
         }
+    });
 
-        function errorGPS(err) {
-            console.warn(`ERROR GPS (${err.code}): ${err.message}`);
-            document.getElementById('gpsStatus').innerText = "Sinyal Lemah / Ditolak";
-        }
-
-        // ==========================================
-        // TOMBOL UTAMA (MULAI/BERHENTI)
-        // ==========================================
-
-        btnToggle.addEventListener('click', async () => {
-            if (!("geolocation" in navigator)) {
-                return alert("Browser Anda tidak mendukung GPS / Geolocation.");
-            }
-
-            if (!isTracking) {
-                const id = courierIdInput.value.trim();
-                if(!id) return alert("Silakan masukkan ID Kurir terlebih dahulu.");
-
-                isTracking = true;
-                btnToggle.innerText = "Selesai Kerja (Matikan GPS)";
-                btnToggle.className = "btn-track btn-on";
-                statusPanel.style.display = "block";
-                toggleFormInputs(true);
-
-                // Aktifkan Wake Lock agar layar tidak mati
-                await requestWakeLock();
-
-                const geoOptions = {
-                    enableHighAccuracy: true,
-                    maximumAge: 0,
-                    timeout: 10000
-                };
-
-                watchId = navigator.geolocation.watchPosition(successGPS, errorGPS, geoOptions);
-
-            } else {
-                isTracking = false;
-                btnToggle.innerText = "Mulai Kerja (Aktifkan GPS)";
-                btnToggle.className = "btn-track btn-off";
-                statusPanel.style.display = "none";
-                toggleFormInputs(false);
-
-                // Matikan Wake Lock agar layar bisa mati normal
-                releaseWakeLock();
-
-                if (watchId !== null) {
-                    navigator.geolocation.clearWatch(watchId);
-                    watchId = null;
-                }
-            }
-        });
-
-        courierStatusSelect.addEventListener('change', () => {
-            if (isTracking) {
-                const lat = parseFloat(document.getElementById('latValue').innerText);
-                const lng = parseFloat(document.getElementById('lngValue').innerText);
-                if(!isNaN(lat) && !isNaN(lng)) {
-                    updateLocationToFirebase(lat, lng);
-                }
-            }
-        });
-    </script>
+</script>
 </body>
 </html>
